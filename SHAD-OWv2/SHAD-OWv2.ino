@@ -3,18 +3,17 @@
 // =======================================================================================
 //                 SHAD-0W :  Small Handheld Arduino D-0 Wand
 // =======================================================================================
-//                          Last Revised Date: 11/01/2019
-//                                Version: 0.4
+//                          Last Revised Date: 2/21/2020
+//                                Version: 0.5
 //                             Written By: jonhaag
 //               Inspired by the SHADOW by KnightShade & PADAWAN by danf
 //                    Movement code based on work by MrBaddeley
-//                 Designed to work on v1.0 of MrBaddeley's D-0 files
+//                 Designed to work on v2.0 of MrBaddeley's D-O files
 //                            
 // =======================================================================================
 //                              Revision History/Notes
 // =======================================================================================
-//v0.4 - Re-enabled sound & headBar automation; moved drive system on/off to L2+O/X
-//v0.3 - Disabled headBar & soundboard start up; added dome automation on/off with L1+O/X
+//v0.1 - Cleaning up code from SHAD-OW v1
 //
 //
 //
@@ -117,6 +116,7 @@ unsigned long DriveMillis = 0;
 
 // called this way, it uses the default address 0x40
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+
 // you can also call it with a different address you want
 // Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver(0x41);
 // you can also call it with a different address and I2C interface
@@ -124,9 +124,6 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 int servoFrameMillis = 20;
 
-//Servo headBarServo; 
-//  
-//ServoEaser headBarServoEaser;
 
 const int HEAD_BAR_CENTER = 290;
 const int HEAD_BAR_FRONT = HEAD_BAR_CENTER - 100;
@@ -139,27 +136,8 @@ const int NOD_BAR_MIN = NOD_BAR_CENTER - 100;
 Servo servo1; 
 Servo servo2;
 
-ServoEaser servoEaser1;
-ServoEaser servoEaser2;
-
-const int Headservo1Pin = 2;
-const int Headservo2Pin = 5;
-
 unsigned long lastMillis;
 
-int Wheel1;
-int Wheel2;
-
-int16_t WheelServo1; //LeftWheel
-int16_t WheelServo2; //RightWheel
-
-int Targetspeed1 = 0; //variable to store target speed
-int Targetspeed2 = 0; //variable to store target speed
-int CurrentWheel1 = 330;  // variable to store current speed for wheel 1
-int CurrentWheel2 = 340;  // variable to store current speed for wheel 2
-
-int WHEEL1_CENTER = 330;
-int WHEEL2_CENTER = 340;
 int DEADZONE = 20;
 const int TURN_DEADZONE = 20;
 
@@ -175,27 +153,8 @@ int HeadState = 0;
 int HeadTurn1;
 int HeadTurn2;
 
-int Wheel1pos = 0;    // variable to store the Wheel1 speed 
-int Wheel2pos = 0;    // variable to store the Wheel2 speed
 float Steerpos = 0; //Variable to adjust the steering
 float Steeradjust = 0;
-
-// =======================================================================================
-//                          Music Maker Shield Setup
-// =======================================================================================
-
-#define SHIELD_RESET  -1      // VS1053 reset pin (unused!)
-#define SHIELD_CS     7      // VS1053 chip select pin (output)
-#define SHIELD_DCS    6      // VS1053 Data/command select pin (output)
-#define CARDCS 4     // Card chip select pin
-// DREQ should be an Int pin, see http://arduino.cc/en/Reference/attachInterrupt
-#define DREQ 3       // VS1053 Data request, ideally an Interrupt pin
-
-Adafruit_VS1053_FilePlayer musicPlayer = 
-  // create breakout-example object!
-  //Adafruit_VS1053_FilePlayer(BREAKOUT_RESET, BREAKOUT_CS, BREAKOUT_DCS, DREQ, CARDCS);
-  // create shield-example object!
-  Adafruit_VS1053_FilePlayer(SHIELD_RESET, SHIELD_CS, SHIELD_DCS, DREQ, CARDCS);
 
 // =======================================================================================
 //                          Main Program
@@ -218,27 +177,6 @@ void setup()
   PS3Nav->attachOnInit(onInitPS3); // onInit() is called upon a new connection - you can call the function whatever you like
   PS3Nav2->attachOnInit(onInitPS3Nav2);
 
-  //Startup Music Player
-  // initialise the music player
-  if (! musicPlayer.begin()) { // initialise the music player
-     Serial.println(F("Couldn't find VS1053, do you have the right pins defined?"));
-    // while (1);
-  }
-  Serial.println(F("VS1053 found"));
-
-    if (! musicPlayer.useInterrupt(VS1053_FILEPLAYER_PIN_INT))
-    Serial.println(F("DREQ pin is not an interrupt pin"));
-  
-  musicPlayer.setVolume(5,5);
-//  musicPlayer.playFullFile("/track001.mp3");
-  //musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
-    if (!SD.begin(CARDCS)) {
-    Serial.println(F("SD failed, or not present"));
-   // while (1);  // don't do anything more
-  }
-  Serial.println("SD OK!");
-  printDirectory(SD.open("/"), 0);
-
   pwm.begin();
   pwm.setPWMFreq(60);  // Analog servos run at ~60 Hz updates
   Serial.print(F("\r\nPWM started"));
@@ -251,22 +189,13 @@ void setup()
   //headBarServo.attach(headBarServoPin);
   //headBarServoEaser.begin(headBarServo, servoFrameMillis);
   //headBarServoEaser.easeTo(90,2000);
-
-  servo1.attach( Headservo1Pin );
-  servo2.attach( Headservo2Pin );
-
-  servoEaser1.begin( servo1, servoFrameMillis );
-  servoEaser2.begin( servo2, servoFrameMillis );
-
-  servoEaser1.easeTo( 90, 2000);
-  servoEaser2.easeTo( 90, 2000);
    
   HeadState =0; 
 
   pwm.setPWM(2, 0, HEAD_BAR_CENTER);
   pwm.setPWM(3, 0, NOD_BAR_CENTER);
 
-  musicPlayer.playFullFile("track000.mp3");
+  
 }
 
 boolean readUSB()
@@ -315,38 +244,7 @@ void loop()
     //We have a fault condition that we want to ensure that we do NOT process any controller data!!!
     return;
   }
-//  headBarServoEaser.update();
-  
-servoEaser1.update();
-servoEaser2.update();
 
-
-if (HeadState == 0) {
-  if (servoEaser1.hasArrived() ) {
-      lastMillis = millis();
-      servoEaser1.easeTo( 90, 2000);
-  }
-    if (servoEaser1.hasArrived() ) {
-      lastMillis = millis();
-      servoEaser2.easeTo( 90, 2000);
-  }
-}
-
-if (HeadState == 1) {
-  if (servoEaser2.hasArrived() ) {
- lastMillis = millis();
-    int angle    = random(30,150);
-    int duration = random(1000,1500); 
-    servoEaser2.easeTo( angle, duration );
-}
-
-if (servoEaser1.hasArrived() ) {
- lastMillis = millis();
-    int angle    = random(70,110);
-    int duration = random(1000,1500); 
-    servoEaser1.easeTo( angle, duration );
-}
-}
   Drive();
 
   if ( !readUSB() )
@@ -469,8 +367,7 @@ boolean criticalFaultDetect()
       output += "Shutting down motors, and watching for a new PS3 message\r\n";
 #endif
 
-      WheelServo1 = 4096;
-      WheelServo2 = 4096; 
+
       isDriveMotorStopped = true;
       return true;
     }
@@ -527,8 +424,7 @@ boolean criticalFaultDetect()
     output += "Shuting downing motors, and watching for a new PS3 message\r\n";
 #endif
 
-    WheelServo1 = 4096;
-    WheelServo2 = 4096; 
+
     isDriveMotorStopped = true;
     return true;
   }
@@ -551,140 +447,20 @@ boolean ps3Drive(PS3BT* myPS3 = PS3Nav)
       }
       #endif
 
-      WheelServo1 = 4096;
-      WheelServo2 = 4096; 
+
       isDriveMotorStopped = true;
       
     } else if (!myPS3->PS3NavigationConnected) {
-      WheelServo1 = 4096;
-      WheelServo2 = 4096; 
+
+ 
       isDriveMotorStopped = true;
 
     } else if (!(myPS3->getButtonPress(L1) || myPS3->getButtonPress(L2))) {
       int stickX = myPS3->getAnalogHat(LeftHatX);
       int stickY = myPS3->getAnalogHat(LeftHatY);
 
-      Steerpos = map(stickX, 0, 255, -155, 155);
-      Wheel1pos = map(stickY, 255, 0, 180, 490);
-      Wheel2pos = map(stickY, 255, 0, 500, 190);
-
-      //Create Steeradjust / SteerState value
-      if (Steerpos > TURN_DEADZONE) {
-        SteerState =1;
-      }
-      else if (Steerpos <-TURN_DEADZONE) {
-        SteerState =2;
-      }
-      else if (Steerpos >-TURN_DEADZONE && Steerpos <TURN_DEADZONE){
-        SteerState = 0;
-      }
-      
-      Steeradjust = Steerpos / 155;
-      
-      if (Steeradjust <0){
-        Steeradjust = -Steeradjust;
-      
-      }
-
-      //Ramp up / Ramp down
-      
-      Targetspeed1 = Wheel1pos;
-      Targetspeed2 = Wheel2pos;
-
-      if(millis() > Drivetime_now + DrivePeriod){      
-        Drivetime_now = millis();      
-      if (Targetspeed1>CurrentWheel1) {
-        CurrentWheel1=CurrentWheel1+ SpeedChange;
-          }
-      else if (Targetspeed1<CurrentWheel1) {
-        CurrentWheel1 = CurrentWheel1 - SpeedChange;
-          }
-          if (Targetspeed2>CurrentWheel2) {
-            CurrentWheel2=CurrentWheel2+ SpeedChange;
-          }
-      else if (Targetspeed2<CurrentWheel2) {
-        CurrentWheel2 = CurrentWheel2 - SpeedChange;
-          }
-      }
-      WheelServo1 = CurrentWheel1;
-      WheelServo2 = CurrentWheel2;
-
-      //kill wheel movement if centred (stops creep). 
-      if (CurrentWheel1 > (WHEEL1_CENTER - DEADZONE) && CurrentWheel1 < (WHEEL1_CENTER + DEADZONE)) {
-            WheelServo1 = 4096;     
-          }
-      if (CurrentWheel2 > (WHEEL2_CENTER - DEADZONE) && CurrentWheel2 < (WHEEL2_CENTER + DEADZONE)) {
-            WheelServo2 = 4096;   
-          }
-      
-      
-      //Check directionstate and move head ready for movement. 
-      if (CurrentWheel1> (WHEEL1_CENTER + DEADZONE) && CurrentWheel2< (WHEEL2_CENTER - DEADZONE)) {
-        DirectionState=1;
-        headValue = HEAD_BAR_FRONT;
-      }
-      else if (CurrentWheel1 < (WHEEL1_CENTER - DEADZONE) && CurrentWheel2> (WHEEL2_CENTER + DEADZONE)) {
-        DirectionState=2;
-        headValue = HEAD_BAR_BACK;
-      }
-      else if (CurrentWheel1 > (WHEEL1_CENTER - DEADZONE) && CurrentWheel1 < (WHEEL1_CENTER + DEADZONE) && CurrentWheel2 > (WHEEL2_CENTER - DEADZONE) && CurrentWheel2 < (WHEEL2_CENTER + DEADZONE)) {
-        DirectionState=0;
-        headValue = HEAD_BAR_CENTER;
-      }
-      
-      //Steering modifier
-      
-      if (CurrentWheel1> (WHEEL1_CENTER - DEADZONE) && CurrentWheel1 < (WHEEL1_CENTER + DEADZONE) && CurrentWheel2 > (WHEEL2_CENTER - DEADZONE) && CurrentWheel2 < (WHEEL2_CENTER + DEADZONE) && (Steerpos > 20 || Steerpos < 0)) {
-      
-        WheelServo1 = CurrentWheel1+(-Steerpos / 3);
-        WheelServo2 = CurrentWheel2+(-Steerpos / 3);
-        
-      }
-      
-      else if ((CurrentWheel1 < (WHEEL1_CENTER - DEADZONE) || CurrentWheel1 > (WHEEL1_CENTER + DEADZONE)) && (CurrentWheel2 < (WHEEL2_CENTER - DEADZONE) || CurrentWheel2 >(WHEEL2_CENTER + DEADZONE))){
-      
-    
-        
-      }
-      
-      
-      //moving steering
-      
-      if (DirectionState ==1) {
-      
-      WheelServo1 = CurrentWheel1+(-Steerpos / 3);
-      WheelServo2 = CurrentWheel2+(-Steerpos / 3);
-        
-      }
-      
-      if (DirectionState ==2) {
-      
-      WheelServo1 = CurrentWheel1+(-Steerpos / 3);
-      WheelServo2 = CurrentWheel2+(-Steerpos / 3);
-        
-      }
-
-      Serial.print ("stickY: ");
-      Serial.print (stickY);      Serial.print ("stickX: ");
-      Serial.print (stickX);
-      Serial.print (" Steerpos: ");
-      Serial.print (Steerpos);
-      Serial.print (" WheelServo1: ");
-      Serial.print (WheelServo1);     
-      Serial.print (" WheelServo2: ");
-      Serial.print (WheelServo2); 
-      Serial.print ("\r\n");
 
 
-//      if (headBarServoEaser.hasArrived() ) {
-//        lastMillis = millis();
-//        headBarServoEaser.easeTo(headValue,1000); 
-//      }
-         
-      
-      pwm.setPWM(0, 0, WheelServo1);
-      pwm.setPWM(1, 0, WheelServo2);
-      pwm.setPWM(2, 0, headValue);
 
       
 
@@ -790,7 +566,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Scream\r\n";
 #endif
-        musicPlayer.playFullFile("track001.mp3");
+
         
         break;
         
@@ -800,7 +576,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Doo Doo.\r\n";
 #endif
-        musicPlayer.playFullFile("track002.mp3");
+
         break;
         
       case '3':
@@ -809,7 +585,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Scramble\r\n";
 #endif
-        musicPlayer.playFullFile("track003.mp3");
+
         break;
         
         case '4':
@@ -818,7 +594,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Scramble\r\n";
 #endif
-        musicPlayer.playFullFile("track004.mp3");
+
         break;
         
       case '5':
@@ -827,7 +603,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Mouse Sound.\r\n";
 #endif
-        musicPlayer.playFullFile("track005.mp3");
+
         break;
         
       case '6':
@@ -836,7 +612,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Crank Sound.\r\n";
 #endif
-        musicPlayer.playFullFile("track006.mp3");
+
         break;
         
       case '7':
@@ -845,7 +621,7 @@ void processSoundCommand(char soundCommand)
         output += soundCommand;
         output += " - Play Splat.\r\n";
 #endif
-        musicPlayer.playFullFile("track007.mp3");
+        
         break;
         
       case '8':
@@ -1134,29 +910,3 @@ void processSoundCommand(char soundCommand)
     }
   }
 #endif
-
-/// File listing helper
-void printDirectory(File dir, int numTabs) {
-   while(true) {
-     
-     File entry =  dir.openNextFile();
-     if (! entry) {
-       // no more files
-       //Serial.println("**nomorefiles**");
-       break;
-     }
-     for (uint8_t i=0; i<numTabs; i++) {
-       Serial.print('\t');
-     }
-     Serial.print(entry.name());
-     if (entry.isDirectory()) {
-       Serial.println("/");
-       printDirectory(entry, numTabs+1);
-     } else {
-       // files have sizes, directories do not
-       Serial.print("\t\t");
-       Serial.println(entry.size(), DEC);
-     }
-     entry.close();
-   }
-}
